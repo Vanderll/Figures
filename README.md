@@ -1,0 +1,2 @@
+# Figures
+Example of figures
