@@ -1,0 +1,172 @@
+---
+title: "T1D Paper Figure 2"
+author: "Lauren Vanderlinden"
+date: "July 19, 2018"
+output: html_document
+---
+
+#### Get Figures for T1D paper ####
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+rm(list=ls())
+options(stringsAsFactors=FALSE)
+
+library(ggplot2)
+library(knitr)
+library(limma)
+library(gplots)
+library(RColorBrewer)
+library(VennDiagram)
+library(ggrepel)
+```
+
+
+**Figure 1 a**
+
+```{r, echo=FALSE }
+#load("Y:/LaurenV_random/Norris/data/T1D Paper Figures.Rdata")
+load("Y:/LaurenV_random/Norris/data/methylation450K/RandiResults/MMresults.T1D.group.age.noSNP.noX.noY.filtered.Rdata")
+load(file="Y:/LaurenV_random/Norris/data/validation/MMresults.T1D.age.group.850lookup.Rdata")
+val = as.data.frame(T1D.MVresults_group_age)
+rm(T1D.MVresults_group_age)
+
+#find out which ones are validated;
+tmp = data.frame(filtered.results.wAnno[which(filtered.results.wAnno$FDR_group<0.05),])
+	nSig = nrow(tmp)
+	tmp.val = val[which(val$pvalue_group<0.05 & rownames(val) %in% tmp$Row.names),]
+
+	tmp2 = tmp[which(tmp$Row.names %in% rownames(tmp.val)),]
+	
+	x = data.frame(rownames(tmp.val), tmp.val[,c("group1")])
+  x2 = tmp[,c(1,4)]
+	tmp.effect = merge(x2, x, by=1)
+	tmp.effect.2 = which((tmp.effect[,2]>0 & tmp.effect[,3]>0) | (tmp.effect[,2]<0 & tmp.effect[,3]<0))
+	val.probes = tmp.effect[tmp.effect.2, "Row.names"]
+	
+#get the -log10(p-values)
+filtered.results.wAnno$log10_pvalue_group = -log10(filtered.results.wAnno$pvalue_group)
+filtered.results.wAnno$log10_FDR_group = -log10(filtered.results.wAnno$FDR_group)
+
+#get a single gene name
+filtered.results.wAnno$geneName = filtered.results.wAnno$UCSC_RefGene_Name
+filtered.results.wAnno$geneName[grep(";", filtered.results.wAnno$geneName, fixed=TRUE)] = sapply(strsplit(filtered.results.wAnno$geneName[grep(";", filtered.results.wAnno$geneName, fixed=TRUE)], split=";", fixed=TRUE), "[[", 1)
+
+#identify what you want colored (validated)
+filtered.results.wAnno$val = vector(mode="character", length=nrow(filtered.results.wAnno))
+filtered.results.wAnno$val[which(filtered.results.wAnno$Row.names %in% val.probes)]="yes"
+filtered.results.wAnno$val[-which(filtered.results.wAnno$Row.names %in% val.probes)]="no"
+table(filtered.results.wAnno$val)
+
+#identify what you want labeled;
+filtered.results.wAnno$label = vector(mode="character", length=nrow(filtered.results.wAnno))
+filtered.results.wAnno$label[filtered.results.wAnno$val=="yes"] = "yes"
+filtered.results.wAnno$label[abs(filtered.results.wAnno$dfBeta)<0.08] = "no"
+filtered.results.wAnno$label[abs(filtered.results.wAnno$log10_pvalue_group)>8] = "yes"
+filtered.results.wAnno$label[!filtered.results.wAnno$val=="yes"] = "no"
+
+table(filtered.results.wAnno$label=="yes")
+filtered.results.wAnno = as.data.frame(filtered.results.wAnno)
+test = filtered.results.wAnno[which(filtered.results.wAnno$FDR_group<0.05),]
+            
+            
+volcplot2 <- ggplot(subset(filtered.results.wAnno, val == "no"), aes(x=dfBeta, y=log10_pvalue_group)) + 
+  geom_point(size = 2, na.rm=T) +
+  geom_point(data=as.data.frame(subset(filtered.results.wAnno, val == "yes")), aes(x=dfBeta, y=log10_pvalue_group), shape=1,fill=NA, color="blue", size=2) + 
+  theme_bw(base_size=12) +
+  theme(legend.title=element_blank()) +
+  theme(legend.position = "none") +
+  theme(text=element_text(family="sans")) + 
+  xlab(expression(paste("Difference in Methylation in Cases Compared to Controls (", Delta, " Beta)", sep=""))) +
+  ylab(expression(-log[10]("p-value"))) + 
+  geom_hline(yintercept = -log10(max(test$pvalue_group)), colour = "darkgrey") + 
+  geom_vline(xintercept = 0, colour = "black") + 
+  scale_colour_gradient(low = "black", high = "black", guide = FALSE) +
+  scale_x_continuous(limits = c(-0.3, 0.3))+
+  
+  geom_label_repel(data = subset(filtered.results.wAnno, label == "yes"),
+                  aes(label = geneName),
+                  family = "sans",
+                  color = "black",
+                  box.padding = unit(0.5, "lines"),
+                  point.padding = unit(0.5, "lines"),
+                  force = 1)
+```
+
+### Figure 1b: Histogram of CpG Features Whole Array vs Candidate Locations
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+all.islands = table(filtered.results.wAnno[,"Relation_to_Island"])
+allIsl.proportion = all.islands/nrow(filtered.results.wAnno)
+all.toMerge = data.frame("450K array", allIsl.proportion)
+colnames(all.toMerge) = c("Probes", "CpG.Feature", "Freq")
+
+
+sig.islands = table(filtered.results.wAnno[which(filtered.results.wAnno[,"FDR_group"]<0.05&filtered.results.wAnno$val=="yes"),"Relation_to_Island"])
+sigIsl.proportion = sig.islands/length(which(filtered.results.wAnno[,"FDR_group"]<0.05&filtered.results.wAnno$val=="yes"))
+sig.toMerge = data.frame("significant probes", sigIsl.proportion)
+colnames(sig.toMerge) = c("Probes", "CpG.Feature", "Freq")
+
+toPlot.proportion = rbind(sig.toMerge, all.toMerge)
+
+fig1b <- ggplot(toPlot.proportion, aes(CpG.Feature, Freq))
+fig1b.toPlot = fig1b + geom_bar(stat = "identity", aes(fill=Probes), position="dodge") +
+  xlab("CpG Feature") + ylab("Proportion") + 
+  theme_bw(base_size=12) +
+  scale_fill_manual(values = c("black", "gray")) +
+  ggtitle("CpG Features")
+fig1b.toPlot  
+```
+
+### Figure 1c: Distance to TSS 
+
+```{r}
+all450.closestTSS = read.table(file="Y:/LaurenV_random/Norris/data/all450K.closestTSS.edit.bed")
+all450.closestTSS = all450.closestTSS[which(all450.closestTSS$V4 %in% filtered.results.wAnno$Row.names),]
+all450.closestTSS = all450.closestTSS[!duplicated(all450.closestTSS$V4),]
+
+all450K.TSSdistance = all450.closestTSS$V2 - all450.closestTSS$V6
+
+cands = filtered.results.wAnno[which(filtered.results.wAnno$FDR_group<0.05 & filtered.results.wAnno$val=="yes"), "Row.names"]
+sig.closestTSS = all450.closestTSS[which(all450.closestTSS$V4 %in% cands),]
+sig.TSSdistance = sig.closestTSS$V2 - sig.closestTSS$V6
+
+#### make plot;
+vec1 = data.frame(x=sig.TSSdistance, group="significant")
+vec2 = data.frame(x=all450K.TSSdistance, group="all450K")
+allDat = rbind(vec1, vec2)
+
+fig1c = ggplot(allDat, aes(x, colour=group, fill=group)) + geom_density(alpha=0.5) + scale_color_manual(values=c("blue", "black"))+ xlim(-5000, 5000)+ scale_fill_manual(values=c("blue", "black")) +
+  xlab("Distance from Nearest TSS") + ylab("Density") + 
+  theme_bw(base_size=12) +
+  ggtitle("Genomic Location in Respect to TSS")
+
+fig1c
+```
+
+### Figure 1d and e: ACCN2 & HLA-DQB1###
+```{r}
+load(file="Y:/LaurenV_random/Norris/data/T1Dfigures/DQB1.scatterplot.v2.Rdata")
+ACCN2
+
+load(file="Y:/LaurenV_random/Norris/data/T1Dfigures/ACCN2.scatterplot.v2.Rdata")
+DQB1
+```
+
+### Lattice Them ###
+
+```{r}
+library(ggpubr)
+
+png(file="Y:/LaurenV_random/Norris/data/T1Dfigures/T1Dpaper.figure2.filteredResults.20180717.png",height=480*18, width=480*14, res=600)
+ggarrange(volcplot2, 
+          ggarrange(fig1b.toPlot, fig1c, ncol=2, labels = c("b", "c")), 
+          ggarrange(ACCN2, DQB1,labels= c("d", "e")),
+          nrow=3,heights = c(6, 2.5, 2.5),
+          labels="a")
+dev.off()
+```
+
+
+
+
